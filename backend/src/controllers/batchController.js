@@ -1,5 +1,5 @@
 const Batch = require("../models/Batch");
-
+const generateBatchQR = require("../utils/qrGenerator");
 const createBatch = async (req, res) => {
     try {
         const batch = await Batch.create({
@@ -115,9 +115,61 @@ const recallBatch = async (req, res) => {
     }
 };
 
+const restoreBatch = async (req, res) => {
+    try {
+        const batch = await Batch.findById(req.params.id);
+
+        if (!batch) {
+            return res.status(404).json({
+                message: "Batch not found"
+            });
+        }
+
+        batch.status = "ACTIVE";
+        await batch.save();
+
+        res.json({
+            message: "Batch restored successfully",
+            batch
+        });
+    } catch (error) {
+        res.status(500).json({
+            message: "Failed to restore batch",
+            error: error.message
+        });
+    }
+};
+
+const getBatchQR = async (req, res) => {
+    try {
+        const batch = await Batch.findById(req.params.id);
+
+        if (!batch) {
+            return res.status(404).json({
+                message: "Batch not found"
+            });
+        }
+
+        const qrCode = await generateBatchQR(batch._id.toString());
+
+        res.json({
+            batchId: batch._id,
+            batchNumber: batch.batchNumber,
+            qrCode
+        });
+    } catch (error) {
+        res.status(500).json({
+            message: "Failed to generate QR code",
+            error: error.message
+        });
+    }
+};  
+
 module.exports = {
     createBatch,
     getBatches,
     verifyBatch,
-    recallBatch
-};
+    recallBatch,
+    restoreBatch,
+    getBatchQR
+};  
