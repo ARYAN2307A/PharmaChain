@@ -30,7 +30,15 @@ const userSchema = new mongoose.Schema(
                 "PHARMACY"
             ],
             default: "PHARMACY"
-        }
+        },
+
+        walletAddress: {
+    type: String,
+    default: null,
+    lowercase: true,
+    trim: true,
+    match: /^0x[a-fA-F0-9]{40}$/
+}
     },
     {
         timestamps: true

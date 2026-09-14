@@ -2,7 +2,7 @@ const QRCode = require("qrcode");
 
 const generateBatchQR = async (batchId) => {
     return await QRCode.toDataURL(
-        `http://localhost:5000/api/batches/${batchId}/verify`
+        `http://192.168.137.1:5000/api/batches/${batchId}/verify`
     );
 };
 

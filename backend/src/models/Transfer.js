@@ -7,36 +7,24 @@ const transferSchema = new mongoose.Schema(
             ref: "Batch",
             required: true
         },
-
         from: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "User",
             required: true
         },
-
         to: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "User",
             required: true
         },
-
         status: {
             type: String,
-            enum: [
-                "PENDING",
-                "COMPLETED",
-                "REJECTED"
-            ],
+            enum: ["PENDING", "COMPLETED", "CANCELLED"],
             default: "PENDING"
         },
-
-        initiatedAt: {
-            type: Date,
-            default: Date.now
-        },
-
         completedAt: {
-            type: Date
+            type: Date,
+            default: null
         }
     },
     {

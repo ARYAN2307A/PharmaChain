@@ -1,22 +1,35 @@
 const Transfer = require("../models/Transfer");
 const Batch = require("../models/Batch");
+const User = require("../models/User");
+const {
+    contract,
+    getContractForRole
+} = require("../config/blockchain");
+const { ethers } = require("ethers");
 
 const createTransfer = async (req, res) => {
     try {
         const { batch, to } = req.body;
-        const receiver = await require("../models/User").findById(to);
 
-if (!receiver) {
-    return res.status(404).json({
-        message: "Receiver not found"
-    });
-}
+        const receiver = await User.findById(to);
 
-if (!["DISTRIBUTOR", "WAREHOUSE", "PHARMACY"].includes(receiver.role)) {
-    return res.status(400).json({
-        message: "Invalid receiver role"
-    });
-}
+        if (!receiver) {
+            return res.status(404).json({
+                message: "Receiver not found"
+            });
+        }
+
+        if (!["DISTRIBUTOR", "WAREHOUSE", "PHARMACY"].includes(receiver.role)) {
+            return res.status(400).json({
+                message: "Invalid receiver role"
+            });
+        }
+
+        if (!receiver.walletAddress) {
+            return res.status(400).json({
+                message: "Receiver wallet address not assigned"
+            });
+        }
 
         const batchData = await Batch.findById(batch);
 
@@ -32,6 +45,17 @@ if (!["DISTRIBUTOR", "WAREHOUSE", "PHARMACY"].includes(receiver.role)) {
             });
         }
 
+        const blockchainBatchId = ethers.id(batchData._id.toString());
+
+        const senderContract = getContractForRole(req.user.role);
+
+const tx = await senderContract.initiateHandover(
+    blockchainBatchId,
+    receiver.walletAddress
+);
+
+        await tx.wait();
+
         const transfer = await Transfer.create({
             batch,
             from: req.user.id,
@@ -40,7 +64,11 @@ if (!["DISTRIBUTOR", "WAREHOUSE", "PHARMACY"].includes(receiver.role)) {
 
         res.status(201).json({
             message: "Transfer initiated successfully",
-            transfer
+            transfer,
+            blockchain: {
+                transactionHash: tx.hash,
+                batchId: blockchainBatchId
+            }
         });
     } catch (error) {
         res.status(500).json({
@@ -74,7 +102,42 @@ const completeTransfer = async (req, res) => {
 
         const batch = await Batch.findById(transfer.batch);
 
-        batch.currentOwner = req.user.id;
+        if (!batch) {
+            return res.status(404).json({
+                message: "Batch not found"
+            });
+        }
+
+        const receiver = await User.findById(transfer.to);
+
+        if (!receiver) {
+            return res.status(404).json({
+                message: "Receiver not found"
+            });
+        }
+
+        const receiverContract = getContractForRole(receiver.role);
+
+        const signerAddress = await receiverContract.runner.getAddress();
+
+        if (
+            signerAddress.toLowerCase() !==
+            receiver.walletAddress.toLowerCase()
+        ) {
+            return res.status(400).json({
+                message: "Receiver wallet does not match blockchain signer"
+            });
+        }
+
+        const blockchainBatchId = ethers.id(batch._id.toString());
+
+        const tx = await receiverContract.confirmHandover(
+            blockchainBatchId
+        );
+
+        await tx.wait();
+
+        batch.currentOwner = transfer.to;
         batch.lifecycleState = "RECEIVED";
 
         await batch.save();
@@ -87,7 +150,12 @@ const completeTransfer = async (req, res) => {
         res.json({
             message: "Transfer completed successfully",
             transfer,
-            batch
+            batch,
+            blockchain: {
+                transactionHash: tx.hash,
+                batchId: blockchainBatchId,
+                confirmedBy: signerAddress
+            }
         });
     } catch (error) {
         res.status(500).json({
@@ -96,7 +164,6 @@ const completeTransfer = async (req, res) => {
         });
     }
 };
-
 const getBatchTransfers = async (req, res) => {
     try {
         const transfers = await Transfer.find({

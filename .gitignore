@@ -1,0 +1,5 @@
+﻿backend/node_modules/
+backend/.env
+blockchain/node_modules/
+blockchain/cache/
+blockchain/coverage/
