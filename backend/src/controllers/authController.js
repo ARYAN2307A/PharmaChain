@@ -20,13 +20,22 @@ const registerUser = async (req, res) => {
             });
         }
 
+        const ROLE_WALLETS = {
+            MANUFACTURER: "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+            DISTRIBUTOR: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+            WAREHOUSE: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+            PHARMACY: "0x90F79bf6EB2c4f670360E1ED71607002461D3ED3",
+            ADMIN: "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266"
+        };
+
         const hashedPassword = await bcrypt.hash(password, 10);
 
         const user = await User.create({
             name,
             email,
             password: hashedPassword,
-            role
+            role,
+            walletAddress: ROLE_WALLETS[role] || ROLE_WALLETS.PHARMACY
         });
 
         res.status(201).json({

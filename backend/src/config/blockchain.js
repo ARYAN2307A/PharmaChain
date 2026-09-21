@@ -13,7 +13,7 @@ const wallet = new ethers.Wallet(
     provider
 );
 
-const contractAddress = "0x959922bE3CAee4b8Cd9a407cc3ac1C251C2007B1";
+const contractAddress = "0x3Aa5ebB10DC797CAC828524e59A333d0A371443c";
 
 
 const contract = new ethers.Contract(
@@ -25,13 +25,15 @@ const contract = new ethers.Contract(
 const getSignerForRole = (role) => {
     let privateKey;
 
-    if (role === "MANUFACTURER") {
-    privateKey = process.env.BLOCKCHAIN_PRIVATE_KEY;
-} else if (role === "DISTRIBUTOR") {
-    privateKey = process.env.HARDHAT_DISTRIBUTOR_PRIVATE_KEY;
-} else if (role === "PHARMACY") {
-    privateKey = process.env.HARDHAT_PHARMACY_PRIVATE_KEY;
-} else {
+    if (role === "MANUFACTURER" || role === "ADMIN") {
+        privateKey = process.env.BLOCKCHAIN_PRIVATE_KEY;
+    } else if (role === "DISTRIBUTOR") {
+        privateKey = process.env.HARDHAT_DISTRIBUTOR_PRIVATE_KEY;
+    } else if (role === "WAREHOUSE") {
+        privateKey = process.env.HARDHAT_WAREHOUSE_PRIVATE_KEY || "0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a";
+    } else if (role === "PHARMACY") {
+        privateKey = process.env.HARDHAT_PHARMACY_PRIVATE_KEY || "0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6";
+    } else {
         throw new Error(`No signer configured for role: ${role}`);
     }
 

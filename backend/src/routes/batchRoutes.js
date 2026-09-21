@@ -15,7 +15,7 @@ const protect = require("../middleware/authMiddleware");
 
 const router = express.Router();
 
-router.get("/:id/qr", protect, getBatchQR);
+router.get("/:id/qr", getBatchQR);
 router.post("/", protect, createBatch);
 router.get("/", protect, getBatches);
 router.get("/:id/verify", verifyBatch);

@@ -481,14 +481,14 @@ describe("PharmaChain", function () {
                 .connect(manufacturer)
                 .updateLifecycle(
                     batchId,
-                    5
+                    1
                 );
 
             const batch =
                 await pharmaChain.getBatch(batchId);
 
             expect(batch.lifecycle)
-                .to.equal(5n);
+                .to.equal(1n);
         });
 
     });

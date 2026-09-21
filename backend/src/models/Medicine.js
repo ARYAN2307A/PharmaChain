@@ -10,25 +10,33 @@ const medicineSchema = new mongoose.Schema(
 
         genericName: {
             type: String,
-            required: true,
             trim: true
         },
 
         manufacturer: {
             type: String,
-            required: true,
             trim: true
         },
 
         dosageForm: {
             type: String,
-            required: true,
-            trim: true
+            trim: true,
+            default: "Tablet"
         },
 
         strength: {
             type: String,
-            required: true,
+            trim: true,
+            default: "Standard"
+        },
+
+        category: {
+            type: String,
+            trim: true
+        },
+
+        dosage: {
+            type: String,
             trim: true
         },
 

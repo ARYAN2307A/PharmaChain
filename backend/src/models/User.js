@@ -27,6 +27,7 @@ const userSchema = new mongoose.Schema(
                 "ADMIN",
                 "MANUFACTURER",
                 "DISTRIBUTOR",
+                "WAREHOUSE",
                 "PHARMACY"
             ],
             default: "PHARMACY"

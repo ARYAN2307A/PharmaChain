@@ -1,11 +1,14 @@
 const Batch = require("../models/Batch");
+const Medicine = require("../models/Medicine");
+const mongoose = require("mongoose");
 const generateBatchQR = require("../utils/qrGenerator");
 const { contract } = require("../config/blockchain");
 const { ethers } = require("ethers");
 const Transfer = require("../models/Transfer");
 const createBatch = async (req, res) => {
+    let batch;
     try {
-        const batch = await Batch.create({
+        batch = await Batch.create({
             ...req.body,
             manufacturer: req.user.id,
             currentOwner: req.user.id
@@ -35,6 +38,9 @@ const createBatch = async (req, res) => {
             }
         });
     } catch (error) {
+        if (batch && batch._id) {
+            await Batch.findByIdAndDelete(batch._id).catch(() => {});
+        }
         res.status(500).json({
             message: "Failed to create batch",
             error: error.message
@@ -44,7 +50,12 @@ const createBatch = async (req, res) => {
 
 const getBatches = async (req, res) => {
     try {
-        const batches = await Batch.find()
+        const batches = await Batch.find({
+            $or: [
+                { manufacturer: req.user.id },
+                { currentOwner: req.user.id }
+            ]
+        })
             .populate("medicine")
             .populate("manufacturer", "name email role")
             .populate("currentOwner", "name email role");
@@ -60,10 +71,20 @@ const getBatches = async (req, res) => {
 
 const verifyBatch = async (req, res) => {
     try {
-        const batch = await Batch.findById(req.params.id)
-            .populate("medicine")
-            .populate("manufacturer", "name email role")
-            .populate("currentOwner", "name email role");
+        let batch;
+        if (mongoose.Types.ObjectId.isValid(req.params.id)) {
+            batch = await Batch.findById(req.params.id)
+                .populate("medicine")
+                .populate("manufacturer", "name email role")
+                .populate("currentOwner", "name email role");
+        }
+
+        if (!batch) {
+            batch = await Batch.findOne({ batchNumber: req.params.id })
+                .populate("medicine")
+                .populate("manufacturer", "name email role")
+                .populate("currentOwner", "name email role");
+        }
 
         if (!batch) {
             return res.status(404).json({
@@ -92,16 +113,6 @@ const verifyBatch = async (req, res) => {
             });
         }
 
-        if (!valid) {
-            return res.json({
-                verified: false,
-                reason: expired
-                    ? "Batch has expired on blockchain"
-                    : "Batch is not active on blockchain",
-                batch
-            });
-        }
-
         const lifecycleMap = [
             "CREATED",
             "DISPATCHED",
@@ -112,6 +123,27 @@ const verifyBatch = async (req, res) => {
         ];
 
         const blockchainLifecycle = lifecycleMap[Number(lifecycle)];
+
+        if (!valid) {
+            return res.json({
+                verified: false,
+                reason: expired
+                    ? "Batch has expired on blockchain"
+                    : batch.status === "RECALLED" || Number(status) === 1
+                    ? "Batch has been RECALLED on blockchain"
+                    : "Batch is not active on blockchain",
+                batch,
+                blockchain: {
+                    batchId: blockchainBatchId,
+                    valid,
+                    expired,
+                    status: Number(status),
+                    lifecycle: blockchainLifecycle,
+                    currentOwner,
+                    expiryTimestamp: Number(expiryTimestamp)
+                }
+            });
+        }
 
         if (blockchainLifecycle !== batch.lifecycleState) {
             return res.json({
@@ -148,7 +180,13 @@ const verifyBatch = async (req, res) => {
 
 const recallBatch = async (req, res) => {
     try {
-        const batch = await Batch.findById(req.params.id);
+        let batch;
+        if (mongoose.Types.ObjectId.isValid(req.params.id)) {
+            batch = await Batch.findById(req.params.id);
+        }
+        if (!batch) {
+            batch = await Batch.findOne({ batchNumber: req.params.id });
+        }
 
         if (!batch) {
             return res.status(404).json({
@@ -183,7 +221,13 @@ const recallBatch = async (req, res) => {
 
 const restoreBatch = async (req, res) => {
     try {
-        const batch = await Batch.findById(req.params.id);
+        let batch;
+        if (mongoose.Types.ObjectId.isValid(req.params.id)) {
+            batch = await Batch.findById(req.params.id);
+        }
+        if (!batch) {
+            batch = await Batch.findOne({ batchNumber: req.params.id });
+        }
 
         if (!batch) {
             return res.status(404).json({
@@ -218,7 +262,13 @@ const restoreBatch = async (req, res) => {
 
 const getBatchQR = async (req, res) => {
     try {
-        const batch = await Batch.findById(req.params.id);
+        let batch;
+        if (mongoose.Types.ObjectId.isValid(req.params.id)) {
+            batch = await Batch.findById(req.params.id);
+        }
+        if (!batch) {
+            batch = await Batch.findOne({ batchNumber: req.params.id });
+        }
 
         if (!batch) {
             return res.status(404).json({
@@ -226,7 +276,7 @@ const getBatchQR = async (req, res) => {
             });
         }
 
-        const qrCode = await generateBatchQR(batch._id.toString());
+        const qrCode = await generateBatchQR(batch.batchNumber);
 
         res.json({
             batchId: batch._id,
@@ -308,59 +358,122 @@ const updateLifecycle = async (req, res) => {
 
 const getMedicinePassport = async (req, res) => {
     try {
-        const batch = await Batch.findById(req.params.id)
-            .populate("medicine")
-            .populate("manufacturer", "name email role")
-            .populate("currentOwner", "name email role");
+        const idParam = req.params.id;
+        let medicine = null;
+        let batch = null;
+        let batches = [];
 
-        if (!batch) {
+        if (mongoose.Types.ObjectId.isValid(idParam)) {
+            medicine = await Medicine.findById(idParam);
+            if (medicine) {
+                batches = await Batch.find({ medicine: medicine._id })
+                    .populate("manufacturer", "name email role walletAddress")
+                    .populate("currentOwner", "name email role walletAddress")
+                    .sort({ createdAt: -1 });
+                if (batches.length > 0) {
+                    batch = batches[0]; // most recent as the "primary" batch
+                }
+            } else {
+                batch = await Batch.findById(idParam)
+                    .populate("medicine")
+                    .populate("manufacturer", "name email role walletAddress")
+                    .populate("currentOwner", "name email role walletAddress");
+            }
+        }
+
+        if (!batch && !medicine) {
+            batch = await Batch.findOne({ batchNumber: idParam })
+                .populate("medicine")
+                .populate("manufacturer", "name email role walletAddress")
+                .populate("currentOwner", "name email role walletAddress");
+        }
+
+        if (!medicine && batch && batch.medicine) {
+            medicine = batch.medicine;
+            if (batches.length === 0) batches = [batch];
+        }
+
+        if (!medicine && !batch) {
             return res.status(404).json({
-                message: "Batch not found"
+                message: "Medicine passport not found"
             });
         }
 
-        const transfers = await Transfer.find({
-            batch: batch._id
-        })
-            .populate("from", "name email role")
-            .populate("to", "name email role")
-            .sort({ createdAt: 1 });
+        // Fetch all batch IDs for this medicine
+        const batchIds = batches.map(b => b._id);
 
-        const blockchainBatchId = ethers.id(batch._id.toString());
+        // Aggregate transfers across all batches
+        let transfers = [];
+        if (batchIds.length > 0) {
+            transfers = await Transfer.find({ batch: { $in: batchIds } })
+                .populate("from", "name email role")
+                .populate("to", "name email role")
+                .populate({ path: "batch", select: "batchNumber" })
+                .sort({ createdAt: 1 });
+        } else if (batch) {
+            transfers = await Transfer.find({ batch: batch._id })
+                .populate("from", "name email role")
+                .populate("to", "name email role")
+                .sort({ createdAt: 1 });
+        }
 
-        const [
-            exists,
-            valid,
-            expired,
-            status,
-            lifecycle,
-            currentOwner,
-            expiryTimestamp
-        ] = await contract.verifyBatch(blockchainBatchId);
+        // Blockchain verification for the primary (most recent) batch
+        let blockchain = { valid: false, reason: "No active batch on blockchain" };
+        let blockchainSummary = [];
 
-        const lifecycleMap = [
-            "CREATED",
-            "DISPATCHED",
-            "IN_TRANSIT",
-            "RECEIVED",
-            "AT_PHARMACY",
-            "SOLD"
-        ];
+        if (batch) {
+            try {
+                const blockchainBatchId = ethers.id(batch._id.toString());
+                const [exists, valid, expired, status, lifecycle, currentOwner, expiryTimestamp] =
+                    await contract.verifyBatch(blockchainBatchId);
+                const lifecycleMap = ["CREATED", "DISPATCHED", "IN_TRANSIT", "RECEIVED", "AT_PHARMACY", "SOLD"];
+                blockchain = {
+                    exists,
+                    valid,
+                    expired,
+                    status: Number(status),
+                    lifecycle: lifecycleMap[Number(lifecycle)] || "CREATED",
+                    currentOwner,
+                    expiryTimestamp: Number(expiryTimestamp),
+                    batchNumber: batch.batchNumber
+                };
+            } catch (err) {
+                blockchain = { valid: false, error: err.message };
+            }
+        }
+
+        // Blockchain verification summary across all batches
+        for (const b of batches) {
+            try {
+                const blockchainBatchId = ethers.id(b._id.toString());
+                const [exists, valid, expired] = await contract.verifyBatch(blockchainBatchId);
+                blockchainSummary.push({
+                    batchId: b._id,
+                    batchNumber: b.batchNumber,
+                    exists,
+                    valid,
+                    expired
+                });
+            } catch {
+                blockchainSummary.push({
+                    batchId: b._id,
+                    batchNumber: b.batchNumber,
+                    exists: false,
+                    valid: false,
+                    expired: false
+                });
+            }
+        }
 
         res.json({
             passport: {
-                batch,
+                medicine,
+                batch: batch || { batchNumber: "N/A", status: "N/A", quantity: 0 },
+                batches,
                 transfers
             },
-            blockchain: {
-                exists,
-                valid,
-                expired,
-                status: Number(status),
-                lifecycle: lifecycleMap[Number(lifecycle)],
-                currentOwner,
-                expiryTimestamp: Number(expiryTimestamp)
-            }
+            blockchain,
+            blockchainSummary
         });
     } catch (error) {
         res.status(500).json({

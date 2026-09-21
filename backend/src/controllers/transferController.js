@@ -182,8 +182,50 @@ const getBatchTransfers = async (req, res) => {
     }
 };
 
+const getTransfers = async (req, res) => {
+    try {
+        const transfers = await Transfer.find({
+            $or: [
+                { from: req.user.id },
+                { to: req.user.id }
+            ]
+        })
+            .populate("from", "name email role")
+            .populate("to", "name email role")
+            .populate({
+                path: "batch",
+                populate: { path: "medicine" }
+            })
+            .sort({ createdAt: -1 });
+
+        res.json(transfers);
+    } catch (error) {
+        res.status(500).json({
+            message: "Failed to fetch transfers",
+            error: error.message
+        });
+    }
+};
+
+const getReceivers = async (req, res) => {
+    try {
+        const users = await User.find({
+            _id: { $ne: req.user.id },
+            role: { $in: ["DISTRIBUTOR", "PHARMACY", "WAREHOUSE"] }
+        }).select("name email role walletAddress");
+        res.json(users);
+    } catch (error) {
+        res.status(500).json({
+            message: "Failed to fetch receivers",
+            error: error.message
+        });
+    }
+};
+
 module.exports = {
     createTransfer,
     completeTransfer,
-    getBatchTransfers
+    getBatchTransfers,
+    getTransfers,
+    getReceivers
 };
